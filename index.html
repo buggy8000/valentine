@@ -410,23 +410,24 @@
 <script>
   const CHARACTERS = ['🦊','🐰','🐼','🐨','🦉','🐙','🦄','🐝','🐧','🐢','🦋','🌸'];
   const STORAGE_KEY = 'date-night-state-v1';
-  const SYNC_BASE = 'https://jsonblob.com/api/jsonBlob';
-  const POLL_MS = 2500;
+  const NTFY_BASE = 'https://ntfy.sh';
+  const ROOM_PREFIX = 'valentine-dn-';
   const PUSH_DEBOUNCE_MS = 400;
+  const CLIENT_ID = Math.random().toString(36).slice(2, 10);
 
   const state = {
     nameA: '', nameB: '',
     charA: CHARACTERS[0], charB: CHARACTERS[1],
     scoreA: 0, scoreB: 0,
-    rev: 0,        // monotonic revision; higher wins on conflict
+    rev: 0,
     updatedAt: 0,
   };
 
-  let roomId = null;
-  let lastRemoteRev = -1;
+  let roomId = null;        // short id shown to user
+  let topic = null;          // full ntfy topic
   let pushTimer = null;
   let pushing = false;
-  let pollTimer = null;
+  let eventSource = null;
 
   // -------- persistence (local) --------
   function loadLocal() {
@@ -447,6 +448,11 @@
   }
 
   // -------- room URL handling --------
+  function genRoomId() {
+    const arr = new Uint8Array(8);
+    crypto.getRandomValues(arr);
+    return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
   function getRoomFromUrl() {
     const h = window.location.hash;
     const m = h.match(/room=([A-Za-z0-9_-]+)/);
@@ -459,99 +465,96 @@
     document.getElementById('room-url').value = url.toString();
   }
 
-  async function createRoom() {
-    setStatus('warn', 'creating room…');
-    try {
-      const res = await fetch(SYNC_BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify(state),
-      });
-      if (!res.ok) throw new Error('create failed: ' + res.status);
-      const loc = res.headers.get('Location') || res.headers.get('location') || '';
-      const id = loc.split('/').pop();
-      if (!id) throw new Error('no room id returned');
-      roomId = id;
-      lastRemoteRev = state.rev;
-      setRoomInUrl(roomId);
-      setStatus('ok', 'live · room ' + roomId.slice(0, 6));
-      startPolling();
-    } catch (err) {
-      console.warn(err);
-      setStatus('warn', 'offline (local only)');
-    }
+  function statusLive() {
+    setStatus('ok', 'live · room ' + roomId.slice(0, 6));
   }
 
-  async function joinRoom(id) {
+  // -------- sync via ntfy.sh pub/sub --------
+  async function startSync(id) {
     roomId = id;
+    topic = ROOM_PREFIX + id;
     setRoomInUrl(roomId);
     setStatus('warn', 'connecting…');
-    await pull(true);
-    startPolling();
+
+    // 1. Pull most recent state from the topic's history (12h retention).
+    try {
+      const res = await fetch(`${NTFY_BASE}/${topic}/json?poll=1`, { cache: 'no-store' });
+      if (res.ok) {
+        const text = await res.text();
+        const lines = text.trim().split('\n').filter(Boolean);
+        let bestRev = state.rev;
+        let best = null;
+        for (const line of lines) {
+          try {
+            const evt = JSON.parse(line);
+            if (evt.event !== 'message' || !evt.message) continue;
+            const payload = JSON.parse(evt.message);
+            if (payload && typeof payload.rev === 'number' && payload.rev > bestRev) {
+              bestRev = payload.rev;
+              best = payload;
+            }
+          } catch (_) {}
+        }
+        if (best) {
+          delete best._client;
+          Object.assign(state, best);
+          saveLocal();
+          render();
+        }
+      }
+    } catch (err) {
+      console.warn('initial pull failed', err);
+    }
+
+    // 2. Subscribe via SSE for real-time updates.
+    subscribeSSE();
   }
 
-  async function pull(initial = false) {
-    if (!roomId) return;
-    try {
-      const res = await fetch(SYNC_BASE + '/' + roomId, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
-        cache: 'no-store',
-      });
-      if (!res.ok) {
-        if (res.status === 404 && initial) {
-          // room id from URL doesn't exist anymore — recreate with same id by POSTing fresh
-          await createRoom();
-          return;
-        }
-        throw new Error('pull failed: ' + res.status);
-      }
-      const remote = await res.json();
-      if (typeof remote !== 'object' || remote === null) return;
-      const remoteRev = remote.rev || 0;
-      if (remoteRev > state.rev) {
-        Object.assign(state, remote);
+  function subscribeSSE() {
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource(`${NTFY_BASE}/${topic}/sse?since=now`);
+    eventSource.onopen = () => statusLive();
+    eventSource.onmessage = (e) => {
+      try {
+        const evt = JSON.parse(e.data);
+        if (evt.event !== 'message' || !evt.message) return;
+        const payload = JSON.parse(evt.message);
+        if (!payload || payload._client === CLIENT_ID) return;
+        if (typeof payload.rev !== 'number' || payload.rev <= state.rev) return;
+        delete payload._client;
+        Object.assign(state, payload);
         saveLocal();
         render();
-      }
-      lastRemoteRev = Math.max(lastRemoteRev, remoteRev);
-      setStatus('ok', 'live · room ' + roomId.slice(0, 6));
-    } catch (err) {
-      console.warn(err);
-      setStatus('warn', 'reconnecting…');
-    }
+      } catch (_) {}
+    };
+    eventSource.onerror = () => setStatus('warn', 'reconnecting…');
   }
 
   function schedulePush() {
-    if (!roomId) return;
+    if (!topic) return;
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(push, PUSH_DEBOUNCE_MS);
   }
 
   async function push() {
-    if (!roomId || pushing) return;
+    if (!topic || pushing) return;
     pushing = true;
     try {
-      const res = await fetch(SYNC_BASE + '/' + roomId, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify(state),
+      const payload = { ...state, _client: CLIENT_ID };
+      const res = await fetch(`${NTFY_BASE}/${topic}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error('push failed: ' + res.status);
-      lastRemoteRev = state.rev;
-      setStatus('ok', 'live · room ' + roomId.slice(0, 6));
+      if (!res.ok) throw new Error('push ' + res.status);
+      statusLive();
     } catch (err) {
       console.warn(err);
       setStatus('warn', 'retry pending…');
-      // try again on next poll
+      setTimeout(push, 3000);
     } finally {
       pushing = false;
     }
-  }
-
-  function startPolling() {
-    if (pollTimer) clearInterval(pollTimer);
-    pollTimer = setInterval(pull, POLL_MS);
   }
 
   // -------- mutate helpers (bump rev so conflicts resolve) --------
@@ -665,7 +668,6 @@
 
     document.getElementById('new-room').addEventListener('click', async () => {
       if (!confirm('Start a fresh room? You and your partner will need the new link.')) return;
-      // reset state, clear room, create new
       Object.assign(state, {
         nameA: '', nameB: '',
         charA: CHARACTERS[0], charB: CHARACTERS[1],
@@ -674,9 +676,8 @@
       });
       saveLocal();
       render();
-      roomId = null;
-      window.location.hash = '';
-      await createRoom();
+      if (eventSource) { eventSource.close(); eventSource = null; }
+      await startSync(genRoomId());
     });
   }
 
@@ -687,11 +688,7 @@
     render();
 
     const fromUrl = getRoomFromUrl();
-    if (fromUrl) {
-      await joinRoom(fromUrl);
-    } else {
-      await createRoom();
-    }
+    await startSync(fromUrl || genRoomId());
   }
 
   init();
