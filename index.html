@@ -413,6 +413,7 @@
   const NTFY_BASE = 'https://ntfy.sh';
   const ROOM_PREFIX = 'valentine-dn-';
   const PUSH_DEBOUNCE_MS = 400;
+  const POLL_MS = 2000;
   const CLIENT_ID = Math.random().toString(36).slice(2, 10);
 
   const state = {
@@ -423,11 +424,13 @@
     updatedAt: 0,
   };
 
-  let roomId = null;        // short id shown to user
-  let topic = null;          // full ntfy topic
+  let roomId = null;
+  let topic = null;
   let pushTimer = null;
   let pushing = false;
-  let eventSource = null;
+  let pollTimer = null;
+  let pollFailures = 0;
+  let lastSeenTime = 0;
 
   // -------- persistence (local) --------
   function loadLocal() {
@@ -469,65 +472,61 @@
     setStatus('ok', 'live · room ' + roomId.slice(0, 6));
   }
 
-  // -------- sync via ntfy.sh pub/sub --------
+  // -------- sync via ntfy.sh polling --------
   async function startSync(id) {
     roomId = id;
     topic = ROOM_PREFIX + id;
     setRoomInUrl(roomId);
     setStatus('warn', 'connecting…');
-
-    // 1. Pull most recent state from the topic's history (12h retention).
-    try {
-      const res = await fetch(`${NTFY_BASE}/${topic}/json?poll=1`, { cache: 'no-store' });
-      if (res.ok) {
-        const text = await res.text();
-        const lines = text.trim().split('\n').filter(Boolean);
-        let bestRev = state.rev;
-        let best = null;
-        for (const line of lines) {
-          try {
-            const evt = JSON.parse(line);
-            if (evt.event !== 'message' || !evt.message) continue;
-            const payload = JSON.parse(evt.message);
-            if (payload && typeof payload.rev === 'number' && payload.rev > bestRev) {
-              bestRev = payload.rev;
-              best = payload;
-            }
-          } catch (_) {}
-        }
-        if (best) {
-          delete best._client;
-          Object.assign(state, best);
-          saveLocal();
-          render();
-        }
-      }
-    } catch (err) {
-      console.warn('initial pull failed', err);
-    }
-
-    // 2. Subscribe via SSE for real-time updates.
-    subscribeSSE();
+    lastSeenTime = 0;
+    await pollOnce();
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollOnce, POLL_MS);
   }
 
-  function subscribeSSE() {
-    if (eventSource) eventSource.close();
-    eventSource = new EventSource(`${NTFY_BASE}/${topic}/sse?since=now`);
-    eventSource.onopen = () => statusLive();
-    eventSource.onmessage = (e) => {
-      try {
-        const evt = JSON.parse(e.data);
-        if (evt.event !== 'message' || !evt.message) return;
-        const payload = JSON.parse(evt.message);
-        if (!payload || payload._client === CLIENT_ID) return;
-        if (typeof payload.rev !== 'number' || payload.rev <= state.rev) return;
-        delete payload._client;
-        Object.assign(state, payload);
+  async function pollOnce() {
+    if (!topic) return;
+    try {
+      const sinceParam = lastSeenTime > 0 ? `&since=${lastSeenTime + 1}` : '';
+      const res = await fetch(`${NTFY_BASE}/${topic}/json?poll=1${sinceParam}`, {
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error('poll ' + res.status);
+      const text = await res.text();
+      const lines = text.trim().split('\n').filter(Boolean);
+
+      let bestRev = state.rev;
+      let best = null;
+      for (const line of lines) {
+        try {
+          const evt = JSON.parse(line);
+          if (evt.event !== 'message' || !evt.message) continue;
+          if (typeof evt.time === 'number' && evt.time > lastSeenTime) {
+            lastSeenTime = evt.time;
+          }
+          const payload = JSON.parse(evt.message);
+          if (!payload || payload._client === CLIENT_ID) continue;
+          if (typeof payload.rev !== 'number') continue;
+          if (payload.rev > bestRev) {
+            bestRev = payload.rev;
+            best = payload;
+          }
+        } catch (_) {}
+      }
+      if (best) {
+        delete best._client;
+        Object.assign(state, best);
         saveLocal();
         render();
-      } catch (_) {}
-    };
-    eventSource.onerror = () => setStatus('warn', 'reconnecting…');
+      }
+
+      pollFailures = 0;
+      statusLive();
+    } catch (err) {
+      pollFailures++;
+      if (pollFailures >= 2) setStatus('warn', 'reconnecting…');
+      console.warn('poll failed', err);
+    }
   }
 
   function schedulePush() {
@@ -676,7 +675,7 @@
       });
       saveLocal();
       render();
-      if (eventSource) { eventSource.close(); eventSource = null; }
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
       await startSync(genRoomId());
     });
   }
