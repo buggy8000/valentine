@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Date Night</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+  :root {
+    --paper: #fffff8;
+    --ink: #111111;
+    --rule: #cfcfc7;
+    --muted: #5a5a52;
+    --accent: #8a1c1c;
+    --good: #3a6a3a;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'EB Garamond', Georgia, 'Times New Roman', serif;
+    font-size: 18px;
+    line-height: 1.45;
+    margin: 0;
+    padding: 0;
+  }
+
+  .page {
+    max-width: 720px;
+    margin: 4rem auto 6rem;
+    padding: 0 1.5rem;
+  }
+
+  h1 {
+    font-weight: 500;
+    font-size: 2.4rem;
+    margin: 0 0 0.25rem;
+    letter-spacing: -0.01em;
+  }
+
+  h1 .ampersand {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--muted);
+    padding: 0 0.15em;
+  }
+
+  .subtitle {
+    font-style: italic;
+    color: var(--muted);
+    margin: 0 0 2rem;
+    font-size: 1.05rem;
+  }
+
+  h2 {
+    font-weight: 500;
+    font-size: 1.15rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 0.35rem;
+    margin: 2.5rem 0 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+  }
+
+  h2 .status {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-style: italic;
+    text-transform: none;
+    font-weight: 400;
+  }
+  h2 .status.ok::before    { content: "● "; color: var(--good); }
+  h2 .status.warn::before  { content: "● "; color: var(--accent); }
+  h2 .status.idle::before  { content: "○ "; color: var(--muted); }
+
+  /* Setup */
+  .setup {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem 2rem;
+  }
+
+  .field { display: flex; flex-direction: column; }
+
+  .field label {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+
+  .field input[type="text"] {
+    font-family: inherit;
+    font-size: 1.1rem;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--ink);
+    padding: 0.25rem 0;
+    color: var(--ink);
+    outline: none;
+  }
+
+  .field input[type="text"]:focus { border-bottom-color: var(--accent); }
+
+  .characters {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 0.4rem;
+    margin-top: 0.25rem;
+  }
+
+  .char {
+    appearance: none;
+    background: transparent;
+    border: 1px solid transparent;
+    font-size: 1.5rem;
+    padding: 0.35rem 0;
+    cursor: pointer;
+    color: var(--ink);
+    border-radius: 2px;
+    transition: border-color 120ms, background 120ms;
+    font-family: inherit;
+  }
+
+  .char:hover { border-color: var(--rule); }
+  .char.selected {
+    border-color: var(--ink);
+    background: rgba(0,0,0,0.03);
+  }
+
+  /* Room sharing */
+  .room {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-size: 0.95rem;
+    color: var(--muted);
+  }
+  .room input {
+    flex: 1;
+    min-width: 220px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    background: transparent;
+    border: 1px solid var(--rule);
+    padding: 0.4rem 0.55rem;
+    color: var(--ink);
+    border-radius: 1px;
+    outline: none;
+  }
+  .room input:focus { border-color: var(--ink); }
+  .room .hint {
+    font-style: italic;
+    width: 100%;
+    margin-top: 0.25rem;
+  }
+
+  /* Scoreboard */
+  .scoreboard {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem 2rem;
+    align-items: end;
+    margin-bottom: 0.5rem;
+  }
+
+  .player {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .player .avatar {
+    font-size: 2.4rem;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+  }
+
+  .player .name {
+    font-size: 1.05rem;
+    color: var(--muted);
+    font-style: italic;
+    margin-bottom: 0.5rem;
+    min-height: 1.4em;
+  }
+
+  .score-num {
+    font-size: 3.4rem;
+    line-height: 1;
+    font-weight: 500;
+    font-feature-settings: "lnum";
+    letter-spacing: -0.02em;
+  }
+
+  .score-controls {
+    display: flex;
+    justify-content: center;
+    gap: 0.6rem;
+    margin-top: 0.4rem;
+  }
+
+  .btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 0.95rem;
+    padding: 0.15rem 0.7rem;
+    cursor: pointer;
+    border-radius: 1px;
+    transition: border-color 120ms, color 120ms;
+  }
+  .btn:hover { border-color: var(--ink); }
+  .btn.minor { font-size: 0.8rem; color: var(--muted); }
+  .btn.minor:hover { color: var(--ink); }
+
+  .reset-row {
+    text-align: center;
+    margin-top: 0.5rem;
+  }
+
+  /* Rounds table */
+  .rounds {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1.05rem;
+  }
+
+  .rounds th, .rounds td {
+    text-align: left;
+    padding: 0.85rem 0.5rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: baseline;
+  }
+
+  .rounds th {
+    font-weight: 500;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--ink);
+  }
+
+  .rounds .round-num {
+    font-style: italic;
+    color: var(--muted);
+    width: 4em;
+  }
+
+  .rounds .round-name { font-size: 1.15rem; }
+
+  .rounds .round-note {
+    display: block;
+    font-style: italic;
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-top: 0.15rem;
+  }
+
+  .rounds a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(138,28,28,0.35);
+    padding-bottom: 1px;
+  }
+  .rounds a:hover { border-bottom-color: var(--accent); }
+
+  .winner-line {
+    text-align: center;
+    margin-top: 1.5rem;
+    font-style: italic;
+    color: var(--muted);
+    min-height: 1.4em;
+  }
+
+  footer {
+    margin-top: 4rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-style: italic;
+    text-align: center;
+  }
+
+  @media (max-width: 540px) {
+    .page { margin-top: 2rem; }
+    h1 { font-size: 2rem; }
+    .setup { grid-template-columns: 1fr; }
+    .characters { grid-template-columns: repeat(8, 1fr); }
+    .score-num { font-size: 2.8rem; }
+    h2 { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <h1><span id="title-a">Player One</span><span class="ampersand">&</span><span id="title-b">Player Two</span></h1>
+    <p class="subtitle">A long-distance evening, in three rounds.</p>
+  </header>
+
+  <section>
+    <h2>Shared Room <span class="status idle" id="sync-status">offline</span></h2>
+    <div class="room">
+      <input id="room-url" type="text" readonly placeholder="generating room…">
+      <button class="btn" id="copy-link">copy link</button>
+      <button class="btn minor" id="new-room">new room</button>
+      <span class="hint">Send this link to your partner. Both names &amp; scores stay in sync.</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Players</h2>
+    <div class="setup">
+      <div class="field">
+        <label for="name-a">Name</label>
+        <input id="name-a" type="text" placeholder="Your name" autocomplete="off">
+        <div class="characters" data-player="a"></div>
+      </div>
+      <div class="field">
+        <label for="name-b">Name</label>
+        <input id="name-b" type="text" placeholder="Her name" autocomplete="off">
+        <div class="characters" data-player="b"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Score</h2>
+    <div class="scoreboard">
+      <div class="player">
+        <div class="avatar" id="avatar-a">·</div>
+        <div class="name" id="display-a">Player One</div>
+        <div class="score-num" id="score-a">0</div>
+        <div class="score-controls">
+          <button class="btn" data-act="dec" data-p="a">−</button>
+          <button class="btn" data-act="inc" data-p="a">+</button>
+        </div>
+      </div>
+      <div class="player">
+        <div class="avatar" id="avatar-b">·</div>
+        <div class="name" id="display-b">Player Two</div>
+        <div class="score-num" id="score-b">0</div>
+        <div class="score-controls">
+          <button class="btn" data-act="dec" data-p="b">−</button>
+          <button class="btn" data-act="inc" data-p="b">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="winner-line" id="winner-line"></div>
+    <div class="reset-row">
+      <button class="btn minor" id="reset-score">reset score</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Rounds</h2>
+    <table class="rounds">
+      <thead>
+        <tr>
+          <th>№</th>
+          <th>Game</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="round-num">I.</td>
+          <td class="round-name">
+            <a href="https://www.geoguessr.com/" target="_blank" rel="noopener">GeoGuessr</a>
+            <span class="round-note">Dropped somewhere on Earth. Closest guess wins the round.</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="round-num">II.</td>
+          <td class="round-name">
+            <a href="https://codenames.game/" target="_blank" rel="noopener">Codenames</a>
+            <span class="round-note">One word, many meanings. Trust each other&rsquo;s clues.</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="round-num">III.</td>
+          <td class="round-name">
+            <a href="https://skribbl.io/" target="_blank" rel="noopener">Skribbl.io</a>
+            <span class="round-note">Draw badly, guess quickly, laugh always.</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>Made with care, across the miles.</footer>
+</div>
+
+<script>
+  const CHARACTERS = ['🦊','🐰','🐼','🐨','🦉','🐙','🦄','🐝','🐧','🐢','🦋','🌸'];
+  const STORAGE_KEY = 'date-night-state-v1';
+  const SYNC_BASE = 'https://jsonblob.com/api/jsonBlob';
+  const POLL_MS = 2500;
+  const PUSH_DEBOUNCE_MS = 400;
+
+  const state = {
+    nameA: '', nameB: '',
+    charA: CHARACTERS[0], charB: CHARACTERS[1],
+    scoreA: 0, scoreB: 0,
+    rev: 0,        // monotonic revision; higher wins on conflict
+    updatedAt: 0,
+  };
+
+  let roomId = null;
+  let lastRemoteRev = -1;
+  let pushTimer = null;
+  let pushing = false;
+  let pollTimer = null;
+
+  // -------- persistence (local) --------
+  function loadLocal() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) Object.assign(state, JSON.parse(raw));
+    } catch (e) {}
+  }
+  function saveLocal() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  // -------- sync status indicator --------
+  function setStatus(kind, text) {
+    const el = document.getElementById('sync-status');
+    el.className = 'status ' + kind;
+    el.textContent = text;
+  }
+
+  // -------- room URL handling --------
+  function getRoomFromUrl() {
+    const h = window.location.hash;
+    const m = h.match(/room=([A-Za-z0-9_-]+)/);
+    return m ? m[1] : null;
+  }
+  function setRoomInUrl(id) {
+    const url = new URL(window.location.href);
+    url.hash = 'room=' + id;
+    history.replaceState(null, '', url.toString());
+    document.getElementById('room-url').value = url.toString();
+  }
+
+  async function createRoom() {
+    setStatus('warn', 'creating room…');
+    try {
+      const res = await fetch(SYNC_BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(state),
+      });
+      if (!res.ok) throw new Error('create failed: ' + res.status);
+      const loc = res.headers.get('Location') || res.headers.get('location') || '';
+      const id = loc.split('/').pop();
+      if (!id) throw new Error('no room id returned');
+      roomId = id;
+      lastRemoteRev = state.rev;
+      setRoomInUrl(roomId);
+      setStatus('ok', 'live · room ' + roomId.slice(0, 6));
+      startPolling();
+    } catch (err) {
+      console.warn(err);
+      setStatus('warn', 'offline (local only)');
+    }
+  }
+
+  async function joinRoom(id) {
+    roomId = id;
+    setRoomInUrl(roomId);
+    setStatus('warn', 'connecting…');
+    await pull(true);
+    startPolling();
+  }
+
+  async function pull(initial = false) {
+    if (!roomId) return;
+    try {
+      const res = await fetch(SYNC_BASE + '/' + roomId, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store',
+      });
+      if (!res.ok) {
+        if (res.status === 404 && initial) {
+          // room id from URL doesn't exist anymore — recreate with same id by POSTing fresh
+          await createRoom();
+          return;
+        }
+        throw new Error('pull failed: ' + res.status);
+      }
+      const remote = await res.json();
+      if (typeof remote !== 'object' || remote === null) return;
+      const remoteRev = remote.rev || 0;
+      if (remoteRev > state.rev) {
+        Object.assign(state, remote);
+        saveLocal();
+        render();
+      }
+      lastRemoteRev = Math.max(lastRemoteRev, remoteRev);
+      setStatus('ok', 'live · room ' + roomId.slice(0, 6));
+    } catch (err) {
+      console.warn(err);
+      setStatus('warn', 'reconnecting…');
+    }
+  }
+
+  function schedulePush() {
+    if (!roomId) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(push, PUSH_DEBOUNCE_MS);
+  }
+
+  async function push() {
+    if (!roomId || pushing) return;
+    pushing = true;
+    try {
+      const res = await fetch(SYNC_BASE + '/' + roomId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(state),
+      });
+      if (!res.ok) throw new Error('push failed: ' + res.status);
+      lastRemoteRev = state.rev;
+      setStatus('ok', 'live · room ' + roomId.slice(0, 6));
+    } catch (err) {
+      console.warn(err);
+      setStatus('warn', 'retry pending…');
+      // try again on next poll
+    } finally {
+      pushing = false;
+    }
+  }
+
+  function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pull, POLL_MS);
+  }
+
+  // -------- mutate helpers (bump rev so conflicts resolve) --------
+  function mutate(fn) {
+    fn();
+    state.rev = (state.rev || 0) + 1;
+    state.updatedAt = Date.now();
+    saveLocal();
+    render();
+    schedulePush();
+  }
+
+  // -------- UI --------
+  function buildCharacters() {
+    for (const player of ['a', 'b']) {
+      const wrap = document.querySelector(`.characters[data-player="${player}"]`);
+      wrap.innerHTML = '';
+      CHARACTERS.forEach(ch => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'char';
+        btn.textContent = ch;
+        btn.dataset.char = ch;
+        btn.addEventListener('click', () => {
+          mutate(() => {
+            if (player === 'a') state.charA = ch; else state.charB = ch;
+          });
+        });
+        wrap.appendChild(btn);
+      });
+    }
+  }
+
+  function render() {
+    // Inputs — only set value if it differs, to avoid clobbering caret while typing
+    const nameAInput = document.getElementById('name-a');
+    const nameBInput = document.getElementById('name-b');
+    if (nameAInput.value !== state.nameA) nameAInput.value = state.nameA;
+    if (nameBInput.value !== state.nameB) nameBInput.value = state.nameB;
+
+    const displayA = (state.nameA || '').trim() || 'Player One';
+    const displayB = (state.nameB || '').trim() || 'Player Two';
+    document.getElementById('title-a').textContent = displayA;
+    document.getElementById('title-b').textContent = displayB;
+    document.getElementById('display-a').textContent = displayA;
+    document.getElementById('display-b').textContent = displayB;
+
+    document.getElementById('avatar-a').textContent = state.charA;
+    document.getElementById('avatar-b').textContent = state.charB;
+
+    document.getElementById('score-a').textContent = state.scoreA;
+    document.getElementById('score-b').textContent = state.scoreB;
+
+    document.querySelectorAll('.characters[data-player="a"] .char').forEach(b => {
+      b.classList.toggle('selected', b.dataset.char === state.charA);
+    });
+    document.querySelectorAll('.characters[data-player="b"] .char').forEach(b => {
+      b.classList.toggle('selected', b.dataset.char === state.charB);
+    });
+
+    const line = document.getElementById('winner-line');
+    if (state.scoreA === 0 && state.scoreB === 0) {
+      line.textContent = '';
+    } else if (state.scoreA === state.scoreB) {
+      line.textContent = 'Dead even.';
+    } else {
+      const lead = state.scoreA > state.scoreB ? displayA : displayB;
+      const diff = Math.abs(state.scoreA - state.scoreB);
+      line.textContent = `${lead} leads by ${diff}.`;
+    }
+
+    document.title = `${displayA} & ${displayB} — Date Night`;
+  }
+
+  function bind() {
+    document.getElementById('name-a').addEventListener('input', e => {
+      mutate(() => { state.nameA = e.target.value; });
+    });
+    document.getElementById('name-b').addEventListener('input', e => {
+      mutate(() => { state.nameB = e.target.value; });
+    });
+
+    document.querySelectorAll('.score-controls .btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = btn.dataset.p;
+        const delta = btn.dataset.act === 'inc' ? 1 : -1;
+        mutate(() => {
+          if (p === 'a') state.scoreA = Math.max(0, state.scoreA + delta);
+          else state.scoreB = Math.max(0, state.scoreB + delta);
+        });
+      });
+    });
+
+    document.getElementById('reset-score').addEventListener('click', () => {
+      mutate(() => { state.scoreA = 0; state.scoreB = 0; });
+    });
+
+    document.getElementById('copy-link').addEventListener('click', async () => {
+      const input = document.getElementById('room-url');
+      try {
+        await navigator.clipboard.writeText(input.value);
+        const btn = document.getElementById('copy-link');
+        const orig = btn.textContent;
+        btn.textContent = 'copied ✓';
+        setTimeout(() => { btn.textContent = orig; }, 1400);
+      } catch (e) {
+        input.select();
+        document.execCommand('copy');
+      }
+    });
+
+    document.getElementById('new-room').addEventListener('click', async () => {
+      if (!confirm('Start a fresh room? You and your partner will need the new link.')) return;
+      // reset state, clear room, create new
+      Object.assign(state, {
+        nameA: '', nameB: '',
+        charA: CHARACTERS[0], charB: CHARACTERS[1],
+        scoreA: 0, scoreB: 0,
+        rev: 0, updatedAt: 0,
+      });
+      saveLocal();
+      render();
+      roomId = null;
+      window.location.hash = '';
+      await createRoom();
+    });
+  }
+
+  async function init() {
+    loadLocal();
+    buildCharacters();
+    bind();
+    render();
+
+    const fromUrl = getRoomFromUrl();
+    if (fromUrl) {
+      await joinRoom(fromUrl);
+    } else {
+      await createRoom();
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>
